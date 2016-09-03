@@ -1,7 +1,5 @@
 
-#define _CRT_SECURE_NO_WARNINGS
 #include "websockets.h"
-
 
 
 int main(int argc, char *argv[])

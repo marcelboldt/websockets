@@ -1,3 +1,7 @@
+
+#ifndef WEBSOCKETS_H
+#define WEBSOCKETS_H
+
 #include<stdio.h>
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 
@@ -20,3 +24,5 @@ private:
 	bool connected = FALSE;
 	SOCKET s;
 };
+
+#endif /* websockets.h */

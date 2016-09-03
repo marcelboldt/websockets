@@ -1,3 +1,5 @@
+#define _CRT_SECURE_NO_WARNINGS
+
 #include "websockets.h"
 
 Websockets_connection::Websockets_connection(const char* ip, u_short port, const char* host, const unsigned char* key)
@@ -5,7 +7,6 @@ Websockets_connection::Websockets_connection(const char* ip, u_short port, const
 	WSADATA wsa;
 	struct sockaddr_in server;
 	char server_reply[20000];
-	// char msg[2000] = "GET ws://192.168.137.6/ HTTP/1.1\r\nHost: MBO\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: ";
 	char* message = new char[2000];
 	char* str2 = new char[200];
 	int recv_size;
@@ -58,7 +59,7 @@ Websockets_connection::Websockets_connection(const char* ip, u_short port, const
 
 	// send data
 
-	int sr = send(s, message, strlen(message), 0);
+	int sr = send(s, message, (int)strlen(message), 0);
 	if (sr == SOCKET_ERROR)
 	{
 		puts("Send failed");
