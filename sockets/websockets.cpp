@@ -94,3 +94,79 @@ Websockets_connection::~Websockets_connection()
 	closesocket(s);
 	WSACleanup();
 }
+
+template<size_t s1, size_t s2> // inject bitset s2 into bitset s1 at position start
+void inject(std::bitset<s1>& bs1, const std::bitset<s2>& bs2, int* start)
+{
+	for (size_t i = 0; i<s2; i++)
+		bs1[i + start] = bs2[i];
+	start += s2;
+}
+
+template<size_t s2> // inject bitset s2 into bitset s1 at position start
+void inject(boost::dynamic_bitset<>& bs1, const std::bitset<s2>& bs2, int start)
+{
+	if (start + s2 > bs1.size()) {
+		// allocate more bits
+		bs1.resize(start + s2)
+	}
+	for (size_t i = 0; i<s2; i++)
+		bs1[i + start] = bs2[i];
+}
+
+
+
+
+
+Websockets_frame::Websockets_frame(bool  FIN, bool  RSV1, bool RSV2, bool RSV3, unsigned int * opcode, bool mask, const uint64_t * payload_length, long * masking_key, std::vector<char> * ext_load, std::vector<char> * payload)
+{
+	frame = boost::dynamic_bitset<>(4);
+
+	frame[0] = FIN;
+	frame[1] = RSV1;
+	frame[2] = RSV2;
+	frame[3] = RSV3;
+
+
+	std::bitset<4> oc(*opcode);
+	inject<4>(frame, oc,frame.size();
+	frame.push_back(mask);
+
+	if (*payload_length > (const uint64_t *) 125) {
+		if (*payload_length > (uint64_t *) 65535) { // > 65535 Bit (up to 2^64)
+			std::bitset<7> pl1(127);
+			inject<7>(frame, pl1, frame.size());
+
+			std::bitset<64> pl2(*payload_length);
+			inject<64>(frame, pl2, frame.size());
+		}
+		else { // 126 - 65535 Bit
+			std::bitset<7> pl1(126);
+			inject<7>(frame, pl1, frame.size());
+
+			std::bitset<16> pl2(*payload_length);
+			inject<16>(frame, pl2, frame.size());
+		}
+	}
+	else { // 0 - 125 Bit
+		std::bitset<7> pl1(*payload_length);
+		inject<7>(frame, pl1, frame.size());
+	}
+
+	std::bitset<32> mk(*masking_key);
+	inject<32>(frame, mk, frame.size());
+
+	// ext_load
+	for (int i = 0; i <= (*ext_load).size(); i++) {
+		std::bitset<8> el((*ext_load)[i]);
+		inject<8>(frame, el, frame.size());
+	}
+
+	// payload
+	for (int i = 0; i <= (*payload).size(); i++) {
+		std::bitset<8> pl((*payload)[i]);
+		inject<8>(frame, pl, frame.size());
+	}
+	
+}
+
