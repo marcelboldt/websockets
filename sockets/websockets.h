@@ -20,19 +20,20 @@ class Websockets_connection {
 public:
 	Websockets_connection(const char* server, u_short port, const char* host, const unsigned char* key);
 	~Websockets_connection();
+	SOCKET s;
 
 private:
 	bool connected = FALSE;
-	SOCKET s;
 };
 
 
 class Websockets_frame {
 public:
-	Websockets_frame(bool  FIN, bool  RSV1, bool RSV2, bool RSV3, unsigned int * opcode, bool mask, const uint64_t * payload_length, long * masking_key, std::vector<char> * ext_load, std::vector<char> * payload);
+	Websockets_frame(bool  FIN, bool  RSV1, bool RSV2, bool RSV3, unsigned int opcode, bool mask, size_t payload_length, std::vector<char>* payload);
+	int send_frame(Websockets_connection * con);
 
 private:
-	boost::dynamic_bitset<> frame;
+	boost::dynamic_bitset<unsigned char> frame;
 
 };
 

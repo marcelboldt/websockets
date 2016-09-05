@@ -104,11 +104,11 @@ void inject(std::bitset<s1>& bs1, const std::bitset<s2>& bs2, int* start)
 }
 
 template<size_t s2> // inject bitset s2 into bitset s1 at position start
-void inject(boost::dynamic_bitset<>& bs1, const std::bitset<s2>& bs2, int start)
+void inject(boost::dynamic_bitset<unsigned char>& bs1, const std::bitset<s2>& bs2, int start)
 {
 	if (start + s2 > bs1.size()) {
 		// allocate more bits
-		bs1.resize(start + s2)
+		bs1.resize(start + s2);
 	}
 	for (size_t i = 0; i<s2; i++)
 		bs1[i + start] = bs2[i];
@@ -116,57 +116,67 @@ void inject(boost::dynamic_bitset<>& bs1, const std::bitset<s2>& bs2, int start)
 
 
 
-
-
-Websockets_frame::Websockets_frame(bool  FIN, bool  RSV1, bool RSV2, bool RSV3, unsigned int * opcode, bool mask, const uint64_t * payload_length, long * masking_key, std::vector<char> * ext_load, std::vector<char> * payload)
+Websockets_frame::Websockets_frame(bool  FIN, bool  RSV1, bool RSV2, bool RSV3, unsigned int opcode, bool mask, size_t payload_length, std::vector<char>* payload)
 {
-	frame = boost::dynamic_bitset<>(4);
+	//frame = boost::dynamic_bitset<unsigned char>(4);
 
-	frame[0] = FIN;
-	frame[1] = RSV1;
-	frame[2] = RSV2;
-	frame[3] = RSV3;
+	frame.push_back(FIN);
+	frame.push_back(RSV1);
+	frame.push_back(RSV2);
+	frame.push_back(RSV3);
 
 
-	std::bitset<4> oc(*opcode);
-	inject<4>(frame, oc,frame.size();
+	std::bitset<4> oc(opcode);
+	inject<4>(frame, oc,frame.size());
 	frame.push_back(mask);
 
-	if (*payload_length > (const uint64_t *) 125) {
-		if (*payload_length > (uint64_t *) 65535) { // > 65535 Bit (up to 2^64)
+	if (payload_length > (size_t) 125) {
+		if (payload_length > (size_t) 65535) { // > 65535 Bit (up to 2^64)
 			std::bitset<7> pl1(127);
 			inject<7>(frame, pl1, frame.size());
 
-			std::bitset<64> pl2(*payload_length);
+			std::bitset<64> pl2(payload_length);
 			inject<64>(frame, pl2, frame.size());
 		}
 		else { // 126 - 65535 Bit
 			std::bitset<7> pl1(126);
 			inject<7>(frame, pl1, frame.size());
 
-			std::bitset<16> pl2(*payload_length);
+			std::bitset<16> pl2(payload_length);
 			inject<16>(frame, pl2, frame.size());
 		}
 	}
 	else { // 0 - 125 Bit
-		std::bitset<7> pl1(*payload_length);
+		std::bitset<7> pl1(payload_length);
 		inject<7>(frame, pl1, frame.size());
 	}
+
+	const uint32_t* masking_key = new const uint32_t(rand() % UINT32_MAX);
+
 
 	std::bitset<32> mk(*masking_key);
 	inject<32>(frame, mk, frame.size());
 
-	// ext_load
-	for (int i = 0; i <= (*ext_load).size(); i++) {
-		std::bitset<8> el((*ext_load)[i]);
-		inject<8>(frame, el, frame.size());
-	}
-
 	// payload
-	for (int i = 0; i <= (*payload).size(); i++) {
+	for (int i = 0; i < payload_length; i++) {
+		//	Octet i of the transformed data("transformed-octet-i") is the XOR (^) of
+		//	octet i of the original data("original-octet-i") with octet at index
+		//	i modulo (%) 4 of the masking key("masking-key-octet-j")
+		
+		int st = (i % 4) * 8;
+
 		std::bitset<8> pl((*payload)[i]);
+		for (int j = 0; j < 8; j++) {
+			pl[j] = pl[j] ^ mk[st+j];
+		}
 		inject<8>(frame, pl, frame.size());
-	}
-	
+	}	
 }
 
+int Websockets_frame::send_frame(Websockets_connection * con)
+{
+	std::vector<char> f;
+	boost::to_block_range(frame, std::back_inserter(f));
+
+	return 	send((*con).s, f.data(), f.size(), 0);
+}
