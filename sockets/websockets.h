@@ -3,13 +3,12 @@
 #define WEBSOCKETS_H
 
 #include<stdio.h>
+#include<iostream>
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 #include<winsock2.h>
+#include <ws2tcpip.h>
 #pragma comment(lib,"ws2_32.lib") //Winsock Library
-#include<windows.h>
 #include<string.h>
-#include<boost/dynamic_bitset.hpp>
-#include<bitset>
 
 #include "base64.h"
 
@@ -29,11 +28,17 @@ private:
 
 class Websockets_frame {
 public:
-	Websockets_frame(bool  FIN, bool  RSV1, bool RSV2, bool RSV3, unsigned int opcode, bool mask, size_t payload_length, std::vector<char>* payload);
+	Websockets_frame(bool  FIN, bool  RSV1, bool RSV2, bool RSV3, unsigned char opcode, bool mask, size_t payload_length, char* payload);
+	Websockets_frame::Websockets_frame(const char * data);
 	int send_frame(Websockets_connection * con);
 
 private:
-	boost::dynamic_bitset<unsigned char> frame;
+	unsigned char frame[MAX_FRAME_SIZE];
+	size_t len;
+	bool sent = FALSE, FIN, RSV1, RSV2, RSV3, mask;
+	unsigned char opcode;
+	size_t payload_length;
+	char * payload;
 
 };
 
