@@ -80,7 +80,7 @@ Websockets_connection::~Websockets_connection()
 
 
 
-Websockets_frame::Websockets_frame(bool  FIN, bool  RSV1, bool RSV2, bool RSV3, unsigned char opcode, bool mask, size_t payload_length, char* payload)
+Websockets_frame::Websockets_frame(bool  FIN, bool  RSV1, bool RSV2, bool RSV3, unsigned char OPCODE, bool MASK, size_t PAYLOAD_LENGTH, char* PAYLOAD)
 {/* 
 Constructs a Websockets_frame object from the parameters.
 Returns: a new websockets frame object, ready to be sent.
@@ -92,19 +92,19 @@ Returns: a new websockets frame object, ready to be sent.
 	frame[0] |= (RSV1) ? (1 << 6) : 0;
 	frame[0] |= (RSV2) ? (1 << 5) : 0;
 	frame[0] |= (RSV3) ? (1 << 4) : 0;
-	frame[0] |= opcode;
+	frame[0] |= OPCODE;
 
-	frame[1] = (mask) ? (1 << 7) : 0;
+	frame[1] = (MASK) ? (1 << 7) : 0;
 
-																			// payload_length
+																			// PAYLOAD_LENGTH
 
-	unsigned char * ptr = (unsigned char *) new size_t(htonll(payload_length));
-	if (payload_length > (size_t) 125) {
-		if (payload_length > (size_t) 65535) { // > 65535 Bit (up to 2^64)
+	unsigned char * ptr = (unsigned char *) new size_t(htonll(PAYLOAD_LENGTH));
+	if (PAYLOAD_LENGTH > (size_t) 125) {
+		if (PAYLOAD_LENGTH > (size_t) 65535) { // > 65535 Bit (up to 2^64)
 			frame[1] |= (unsigned char) 127;
 			
 			for (int i = 0; i < 8; i++) {
-				frame[2 + i] = *(ptr+i); // all bytes of payload_length
+				frame[2 + i] = *(ptr+i); // all bytes of PAYLOAD_LENGTH
 			}
 			len = 10;
 		}
@@ -112,13 +112,13 @@ Returns: a new websockets frame object, ready to be sent.
 			frame[1] |= (unsigned char)126;
 
 			for (int i = 0; i < 2; i++) {
-				frame[2 + i] = *(ptr + i+6); // the 7th - 8th Byte (2 LSB Bytes) of payload_length
+				frame[2 + i] = *(ptr + i+6); // the 7th - 8th Byte (2 LSB Bytes) of PAYLOAD_LENGTH
 			}
 			len = 4;
 		}
 	}
 	else { // 0 - 125 Bit
-		frame[1] |= *(ptr+7); // the 8th Byte of payload_length
+		frame[1] |= *(ptr+7); // the 8th Byte of PAYLOAD_LENGTH
 		len = 2;
 	}
 	delete ptr;
@@ -137,13 +137,13 @@ Returns: a new websockets frame object, ready to be sent.
 
 																			// payload
 
-	for (int i = 0; i < payload_length; i++) {
+	for (int i = 0; i < PAYLOAD_LENGTH; i++) {
 		//  RFC 6455 sec. 5.3:
 		//	Octet i of the transformed data("transformed-octet-i") is the XOR (^) of
 		//	octet i of the original data("original-octet-i") with octet at index
 		//	i modulo (%) 4 of the masking key("masking-key-octet-j")
 
-		frame[len] = *(payload+i) ^ *(unsigned char*)(masking_key + (i % 4));
+		frame[len] = *(PAYLOAD+i) ^ *(unsigned char*)(masking_key + (i % 4));
 		len++;
 	}
 }
@@ -151,8 +151,47 @@ Returns: a new websockets frame object, ready to be sent.
 Websockets_frame::Websockets_frame(const char * data) {
 	/* Parses the data and returns a Websocket frame object.
 	*/
+	len = 0;
+											// 1st Byte
+	this->FIN = (*data & 128) > 0;
+	this->RSV1 = (*data & 64) > 0;
+	this->RSV2 = (*data & 32) > 0;
+	this->RSV3 = (*data & 16) > 0;
+	this->OPCODE = (*data & 15);
+											// 2nd Byte
+	this->MASK = (*(data+1) & 128) > 0;
+	
+	char c = *(data + 1) & 127;
+	if (c < 126) { // this is payload_length
+		this->PAYLOAD_LENGTH = c;
+		len = 2;
+	}
+	else if (c == 126) {
+		// next two bytes are payload_length
+		this->PAYLOAD_LENGTH = ntohs(*(uint16_t*)(data +2));
+		len = 4;
+	}
+	else {
+		// next 8 bytes are payload length
+		this->PAYLOAD_LENGTH = ntohll(*(uint64_t*)(data + 2));
+		len = 10;
+	}
 
+											// Masking key & Payload
+	if (this->MASK) {
+		const char* masking_key = (data + len);
+		len += 4;
 
+		char * pl = new char[this->PAYLOAD_LENGTH];
+		for (size_t i=0; i < this->PAYLOAD_LENGTH; i++) {
+			*(pl + i) = *(data + len + i) ^ *(masking_key + (i % 4));  // unmask
+		}
+
+	}
+	else {
+		this->PAYLOAD = (const char *)(data + len);
+	}
+	len += this->PAYLOAD_LENGTH;
 }
 
 int Websockets_frame::send_frame(Websockets_connection * con)
@@ -167,3 +206,51 @@ int Websockets_frame::send_frame(Websockets_connection * con)
 	 return send((*con).s, (const char *)&frame, len, 0);
 }
 
+bool Websockets_frame::fin()
+{/* Returns the FIN bit, indicating that this is the final fragment in a message. */
+	return this->FIN;
+}
+
+bool Websockets_frame::rsv1()
+{/* Returns the RSV1 bit, for negotiated extensions. */
+	return this->RSV1;
+}
+
+bool Websockets_frame::rsv2()
+{/* Returns the RSV2 bit, for negotiated extensions. */
+	return this->RSV2;
+}
+
+bool Websockets_frame::rsv3()
+{/* Returns the RSV3 bit, for negotiated extensions. */
+	return this->RSV3;
+}
+
+bool Websockets_frame::mask()
+{/* Returns the MASK bit, indicating whether the "Payload data" is masked. */
+	return this->MASK;
+}
+
+unsigned char Websockets_frame::opcode()
+{/* Returns the Opcode:
+	*  %x0 denotes a continuation frame
+	*  %x1 denotes a text frame
+	*  %x2 denotes a binary frame
+	*  %x3 - 7 are reserved for further non - control frames
+	*  %x8 denotes a connection close
+	*  %x9 denotes a ping
+	*  %xA denotes a pong
+	*  %xB - F are reserved for further control frames
+*/
+	return this->OPCODE;
+}
+
+size_t Websockets_frame::payload_length()
+{ /* Returns the payload length as defined by the frame header. */
+	return this->PAYLOAD_LENGTH;
+}
+
+const char * Websockets_frame::payload()
+{ /* returns a pointer to the payload */
+	return this->PAYLOAD;
+}
