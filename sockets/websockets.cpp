@@ -9,10 +9,7 @@ Websockets_connection::Websockets_connection(const char* ip, u_short port, const
 	s = INVALID_SOCKET;
 	struct sockaddr_in server;
 	memset(&server, 0, sizeof(server));
-	char server_reply[20000];
 	char* message = new char[2000];
-	char* str2 = new char[200];
-	int recv_size;
 
 																			// compose message string
 
@@ -54,21 +51,21 @@ Websockets_connection::Websockets_connection(const char* ip, u_short port, const
 
 																			// send data
 
-	int sr = send(s, message, (int)strlen(message), 0);
-	if (sr == SOCKET_ERROR)
+
+	if (send(s, message, (int)strlen(message), 0) == SOCKET_ERROR)
 	{
 		puts("Send failed");
 	}
 
-	Sleep(200); // necessary? socket blocking?
+	Sleep(200); 
 
 																			// Receive a reply from the server
-	if ((recv_size = recv(s, server_reply, 20000, 0)) == SOCKET_ERROR)
+	if ((recv(s, server_reply, BUFFER_SIZE, 0)) == SOCKET_ERROR)
 	{
 		puts("recv failed");
 	}
 
-	this->connected = TRUE; // TODO: parse the server reply
+	this->connected = true; // TODO: parse the server reply
 }
 
 Websockets_connection::~Websockets_connection()
@@ -78,13 +75,108 @@ Websockets_connection::~Websockets_connection()
 	WSACleanup();
 }
 
+int Websockets_connection::send_data(char* data, size_t length, uint8_t oc)
+{/* Sends the data given over the open Websockets connection.
+	Returns: an the number of frames sent if successful, otherwise -1. 
+	Operation codes: 
+	* 0 : continiation
+	* 1 : text data
+	* 2 : binary data
+	* 3-7 reserved non-control
+	* 8 : connection close
+	* 9 : ping
+	* A : pong
+	* B-F reserved control
+ */
+
+	auto i = 0;
+	std::vector<bool> succ;
+	Websockets_frame* f;
+
+	while(i + MAX_FRAME_SIZE < length)
+	{
+		f = new Websockets_frame(false, false, false, false, (i == 0 ? oc : 0), (this->client ? 1 : 0), MAX_FRAME_SIZE, (data + i));
+		succ.push_back(f->send_frame(this));
+		i += MAX_FRAME_SIZE;
+		delete(f);
+	}
+	f = new Websockets_frame(true, false, false, false, (i == 0 ? oc : 0), (this->client ? 1 : 0), length, (data + i));
+	succ.push_back(f->send_frame(this));
+	delete(f);
+
+	for (i = 0; i < succ.size(); i++)
+	{
+		if (!succ[i]) return -1;
+	}
+
+	return succ.size();
+}
+
+int Websockets_connection::receive_data(const char* filename)
+{
+	char* buf = this->server_reply; // Why must this var be global?
+	Websockets_frame* f;
+	std::ofstream tfile;
+	//const char* filename = "ws_temp.tmp";
+
+	recv(this->s, (char*)buf, BUFFER_SIZE, 0); // receive the first frame
+	f = new Websockets_frame((const char *)buf);
 
 
-Websockets_frame::Websockets_frame(bool  FIN, bool  RSV1, bool RSV2, bool RSV3, unsigned char OPCODE, bool MASK, size_t PAYLOAD_LENGTH, char* PAYLOAD)
+	switch (f->opcode()) {
+	case 0:
+		for (auto i = 0; i < f->payload_length(); i++) {
+			tfile << *(f->payload() + i);
+		}
+		break;
+	case 1: 
+		tfile.open(filename, std::ios::app);
+		for (auto i = 0; i < f->payload_length(); i++) {
+			tfile << *(f->payload() + i);
+		}
+		break;
+	case 2:
+		tfile.open(filename, std::ios::app | std::ios::binary);
+		for (auto i = 0; i < f->payload_length(); i++) {
+			tfile << *(f->payload() + i);
+		}
+		break;
+	default: return UNKNOWN_OPCODE;
+	}
+
+	while (!f->fin())
+	{
+		if (recv(this->s, (char*)buf, BUFFER_SIZE, 0) > 0) { // receive the next frame
+			f = new Websockets_frame((const char *)buf);
+			for (auto i = 0; i < f->payload_length(); i++) {
+				tfile << *(f->payload() + i);
+			}
+		}
+	}
+		
+
+	// TODO: what to do with the frame that overlaps? One option: two threads write & read simultaneously. But how concatenate? - its bullshit: one frame is one http message. If the frame has no fin bit set, read the next...
+
+	// TODO: concatenate the payload. Could speed up with threading?
+
+	return 0;
+}
+
+Websockets_frame::Websockets_frame(bool FIN, bool  RSV1, bool RSV2, bool RSV3, unsigned char OPCODE, bool MASK, size_t PAYLOAD_LENGTH, char* PAYLOAD)
 {/* 
 Constructs a Websockets_frame object from the parameters.
 Returns: a new websockets frame object, ready to be sent.
 */
+	this->FIN = FIN;
+	this->RSV1 = RSV1;
+	this->RSV2 = RSV2;
+	this->RSV3 = RSV3;
+	this->OPCODE = OPCODE;
+	this->MASK = MASK;
+	this->PAYLOAD_LENGTH = PAYLOAD_LENGTH;
+	this->PAYLOAD = PAYLOAD;
+
+
 	len = 0;
 
 	frame[0] = (FIN) ? (1 << 7) : 0;
@@ -122,7 +214,7 @@ Returns: a new websockets frame object, ready to be sent.
 		len = 2;
 	}
 	delete ptr;
-	ptr = NULL;
+	ptr = nullptr;
 
 																			// masking_key
 
@@ -189,13 +281,14 @@ Websockets_frame::Websockets_frame(const char * data) {
 
 	}
 	else {
-		this->PAYLOAD = (const char *)(data + len);
+		this->PAYLOAD = static_cast<const char *>(data + len);
 	}
 	len += this->PAYLOAD_LENGTH;
 }
 
-int Websockets_frame::send_frame(Websockets_connection * con)
-{/* Sends the frame */
+int Websockets_frame::send_frame(Websockets_connection * con) const
+{/* Sends the frame.
+	Returns: an int indicating the frame was successfully sent (the return values of winsock / POSIX) send() */
 
 	// char test[11] = { /* Packet sending "hello", for debugging */
 	//	0x81, 0x85, 0x15, 0x98, 0x74, 0x48, 0x7d, 0xfd,
@@ -206,32 +299,37 @@ int Websockets_frame::send_frame(Websockets_connection * con)
 	 return send((*con).s, (const char *)&frame, len, 0);
 }
 
-bool Websockets_frame::fin()
+bool Websockets_frame::fin() const
 {/* Returns the FIN bit, indicating that this is the final fragment in a message. */
 	return this->FIN;
 }
 
-bool Websockets_frame::rsv1()
+bool Websockets_frame::rsv1() const
 {/* Returns the RSV1 bit, for negotiated extensions. */
 	return this->RSV1;
 }
 
-bool Websockets_frame::rsv2()
+bool Websockets_frame::rsv2() const
 {/* Returns the RSV2 bit, for negotiated extensions. */
 	return this->RSV2;
 }
 
-bool Websockets_frame::rsv3()
+bool Websockets_frame::rsv3() const
 {/* Returns the RSV3 bit, for negotiated extensions. */
 	return this->RSV3;
 }
 
-bool Websockets_frame::mask()
+bool Websockets_frame::mask() const
 {/* Returns the MASK bit, indicating whether the "Payload data" is masked. */
 	return this->MASK;
 }
 
-unsigned char Websockets_frame::opcode()
+size_t Websockets_frame::frame_length() const
+{/* Returns the length of the frame in Bytes */
+	return this->len;
+}
+
+unsigned char Websockets_frame::opcode() const
 {/* Returns the Opcode:
 	*  %x0 denotes a continuation frame
 	*  %x1 denotes a text frame
@@ -245,12 +343,12 @@ unsigned char Websockets_frame::opcode()
 	return this->OPCODE;
 }
 
-size_t Websockets_frame::payload_length()
+size_t Websockets_frame::payload_length() const
 { /* Returns the payload length as defined by the frame header. */
 	return this->PAYLOAD_LENGTH;
 }
 
-const char * Websockets_frame::payload()
+const char * Websockets_frame::payload() const
 { /* returns a pointer to the payload */
 	return this->PAYLOAD;
 }
