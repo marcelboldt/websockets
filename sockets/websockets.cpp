@@ -1,3 +1,32 @@
+/*
+websockets.cpp and websockets.h
+http://www.github.com/marcelboldt/websockets
+
+Copyright (C) 2016 Marcel Boldt
+
+This source code is provided 'as-is', without any express or implied
+warranty. In no event will the author be held liable for any damages
+arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely, subject to the following restrictions:
+
+1. The origin of this source code must not be misrepresented; you must not
+claim that you wrote the original source code. If you use this source code
+in a product, an acknowledgment in the product documentation would be
+appreciated but is not required.
+
+2. Altered source versions must be plainly marked as such, and must not be
+misrepresented as being the original source code.
+
+3. This notice may not be removed or altered from any source distribution.
+
+Marcel Boldt <boldt@live.de>
+
+*/
+
+
 #define _CRT_SECURE_NO_WARNINGS
 
 #include "websockets.h"
@@ -113,53 +142,82 @@ int Websockets_connection::send_data(char* data, size_t length, uint8_t oc)
 }
 
 int Websockets_connection::receive_data(const char* filename)
-{
+{/* Reads Websockets frames from the socket and writes data into a file.
+	Returns if successful the amount of bytes written; otherwise an error code as defined in websockets.h
+	*/
+
+
 	char* buf = this->server_reply; // Why must this var be global?
 	Websockets_frame* f;
 	std::ofstream tfile;
-	//const char* filename = "ws_temp.tmp";
+	size_t len = 0;
 
 	recv(this->s, (char*)buf, BUFFER_SIZE, 0); // receive the first frame
 	f = new Websockets_frame((const char *)buf);
 
 
 	switch (f->opcode()) {
-	case 0:
+/*	case 0:
 		for (auto i = 0; i < f->payload_length(); i++) {
 			tfile << *(f->payload() + i);
 		}
-		break;
+		len += f->payload_length();
+		break; */
 	case 1: 
 		tfile.open(filename, std::ios::app);
 		for (auto i = 0; i < f->payload_length(); i++) {
 			tfile << *(f->payload() + i);
 		}
+		len = f->payload_length();
 		break;
 	case 2:
 		tfile.open(filename, std::ios::app | std::ios::binary);
 		for (auto i = 0; i < f->payload_length(); i++) {
 			tfile << *(f->payload() + i);
 		}
+		len = f->payload_length();
 		break;
 	default: return UNKNOWN_OPCODE;
 	}
 
 	while (!f->fin())
-	{
+	{ // TODO: check connection status
+
 		if (recv(this->s, (char*)buf, BUFFER_SIZE, 0) > 0) { // receive the next frame
 			f = new Websockets_frame((const char *)buf);
 			for (auto i = 0; i < f->payload_length(); i++) {
 				tfile << *(f->payload() + i);
 			}
+			len += f->payload_length();
 		}
 	}
 		
+	return len;
+}
 
-	// TODO: what to do with the frame that overlaps? One option: two threads write & read simultaneously. But how concatenate? - its bullshit: one frame is one http message. If the frame has no fin bit set, read the next...
+int Websockets_connection::close(uint16_t closecode, Websockets_frame* recv_cf)
+{ /* Closes the connection. */
 
-	// TODO: concatenate the payload. Could speed up with threading?
+	//this->connection state CLOSING
+	//send a close control frame with closecode
+
+
+	char* payload = new char[20];
+	strcpy(payload, (const char*)closecode);
+	strcat(payload, " Goodbye...");
+
+	Websockets_frame* cf = new Websockets_frame(true, false, false, false, 0x8, true,sizeof(payload), payload);
+	cf->send_frame(this);
+
+	//  if init then wait for receiving a close frame
+
+	// shutdown() with SHUT_WR
+	//recv until 0
+	// close()
+	// state -> closed
 
 	return 0;
+
 }
 
 Websockets_frame::Websockets_frame(bool FIN, bool  RSV1, bool RSV2, bool RSV3, unsigned char OPCODE, bool MASK, size_t PAYLOAD_LENGTH, char* PAYLOAD)
