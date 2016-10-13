@@ -2,27 +2,29 @@
 websockets.cpp and websockets.h
 http://www.github.com/marcelboldt/websockets
 
-Copyright (C) 2016 Marcel Boldt
+ The MIT License (MIT)
 
-This source code is provided 'as-is', without any express or implied
-warranty. In no event will the author be held liable for any damages
-arising from the use of this software.
+Copyright (C) 2016 Marcel Boldt / EXASOL
 
-Permission is granted to anyone to use this software for any purpose,
-including commercial applications, and to alter it and redistribute it
-freely, subject to the following restrictions:
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-1. The origin of this source code must not be misrepresented; you must not
-claim that you wrote the original source code. If you use this source code
-in a product, an acknowledgment in the product documentation would be
-appreciated but is not required.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-2. Altered source versions must be plainly marked as such, and must not be
-misrepresented as being the original source code.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
-3. This notice may not be removed or altered from any source distribution.
-
-Marcel Boldt <boldt@live.de>
+Marcel Boldt <marcel.boldt@exasol.com>
 
 */
 
@@ -31,15 +33,19 @@ Marcel Boldt <boldt@live.de>
 
 #include "websockets.h"
 
-Websockets_connection::Websockets_connection(const char* ip, u_short port, const char* host, const unsigned char* key)
+Websockets_connection::Websockets_connection(const char *ip, uint16_t port, const char *host)
 { /* Creates socket and initialises a Websocket connection to a remote server.
   Returns: A Websockets_connection object */
-	WSADATA wsa;
+
 	s = INVALID_SOCKET;
 	struct sockaddr_in server;
 	memset(&server, 0, sizeof(server));
 	char* message = new char[2000];
 
+    key = new unsigned char[16];
+    for (int i = 0; i < 16; i++) {
+        key[i] = (unsigned char) rand() % 255;
+    }
 																			// compose message string
 
 	strcpy(message, "GET ws://");
@@ -50,19 +56,25 @@ Websockets_connection::Websockets_connection(const char* ip, u_short port, const
 	std::string key_b64 = base64_encode(key, 16);
 	strcat(message, key_b64.c_str());
 	strcat(message, "\r\n\r\n");
-
-	if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
-	{
-		printf("Failed. Error Code : %d\n", WSAGetLastError());
-	}
+#ifdef _WIN32
+    WSADATA wsa;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
+    {
+        printf("Winsock startup failed. Error Code : %d\n", WSAGetLastError());
+    }
+#endif
 
 
 																			// create socket
 
 	s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (s == INVALID_SOCKET) {
-		printf("Error at socket(): %ld\n", WSAGetLastError());
-		WSACleanup();
+#ifdef _WIN32
+        printf("Error at socket(): %ld\n", WSAGetLastError());
+                WSACleanup();
+#else
+        printf("Error at socket(): %ld\n", errno);
+#endif
 	}
 
 
@@ -72,9 +84,9 @@ Websockets_connection::Websockets_connection(const char* ip, u_short port, const
 	server.sin_family = AF_INET;
 	server.sin_port = htons(port);
 
-	if (connect(s, (SOCKADDR *)&server, sizeof(server)) < 0)
+    if (connect(s, (struct sockaddr *) &server, sizeof(server)) < 0)
 	{
-		puts("connect error");
+        throw "WEBSOCKETS_CONNECTION: connect error";
 	}
 
 
@@ -83,32 +95,34 @@ Websockets_connection::Websockets_connection(const char* ip, u_short port, const
 
 	if (send(s, message, (int)strlen(message), 0) == SOCKET_ERROR)
 	{
-		puts("Send failed");
+        throw "Send failed";
 	}
 
-	Sleep(200); 
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
 																			// Receive a reply from the server
 	if ((recv(s, server_reply, BUFFER_SIZE, 0)) == SOCKET_ERROR)
 	{
-		puts("recv failed");
+        throw "recv failed";
 	}
 
-	this->connected = true; // TODO: parse the server reply
+    this->CONNECTED = true; // TODO: parse the server reply
 }
 
 Websockets_connection::~Websockets_connection()
 {
+#ifdef _WIN32
 	// close & unload winsock
 	closesocket(s);
 	WSACleanup();
+#endif
 }
 
-int Websockets_connection::send_data(char* data, size_t length, uint8_t oc)
+int Websockets_connection::send_data(const char *data, size_t length, uint8_t oc)
 {/* Sends the data given over the open Websockets connection.
 	Returns: an the number of frames sent if successful, otherwise -1. 
 	Operation codes: 
-	* 0 : continiation
+	* 0 : continuation
 	* 1 : text data
 	* 2 : binary data
 	* 3-7 reserved non-control
@@ -141,13 +155,14 @@ int Websockets_connection::send_data(char* data, size_t length, uint8_t oc)
 	return succ.size();
 }
 
-int Websockets_connection::receive_data(const char* filename)
+int Websockets_connection::receive_data(const char *filename, bool append)
 {/* Reads Websockets frames from the socket and writes data into a file.
 	Returns if successful the amount of bytes written; otherwise an error code as defined in websockets.h
 	*/
 
 
-	char* buf = this->server_reply; // Why must this var be global?
+    //char* buf = this->server_reply; // Why must this var be global?
+    char *buf = new char[BUFFER_SIZE];
 	Websockets_frame* f;
 	std::ofstream tfile;
 	size_t len = 0;
@@ -163,15 +178,23 @@ int Websockets_connection::receive_data(const char* filename)
 		}
 		len += f->payload_length();
 		break; */
-	case 1: 
-		tfile.open(filename, std::ios::app);
+        case 1:
+            if (append) {
+                tfile.open(filename, std::ios::app);
+            } else {
+                tfile.open(filename, std::ios::trunc);
+            }
 		for (auto i = 0; i < f->payload_length(); i++) {
 			tfile << *(f->payload() + i);
 		}
 		len = f->payload_length();
 		break;
 	case 2:
-		tfile.open(filename, std::ios::app | std::ios::binary);
+        if (append) {
+            tfile.open(filename, std::ios::app | std::ios::binary);
+        } else {
+            tfile.open(filename, std::ios::trunc | std::ios::binary);
+        }
 		for (auto i = 0; i < f->payload_length(); i++) {
 			tfile << *(f->payload() + i);
 		}
@@ -220,7 +243,12 @@ int Websockets_connection::close(uint16_t closecode, Websockets_frame* recv_cf)
 
 }
 
-Websockets_frame::Websockets_frame(bool FIN, bool  RSV1, bool RSV2, bool RSV3, unsigned char OPCODE, bool MASK, size_t PAYLOAD_LENGTH, char* PAYLOAD)
+bool Websockets_connection::connected() {
+    return this->CONNECTED;
+}
+
+Websockets_frame::Websockets_frame(bool FIN, bool RSV1, bool RSV2, bool RSV3, unsigned char OPCODE, bool MASK,
+                                   size_t PAYLOAD_LENGTH, const char *PAYLOAD)
 {/* 
 Constructs a Websockets_frame object from the parameters.
 Returns: a new websockets frame object, ready to be sent.
