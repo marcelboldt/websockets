@@ -35,9 +35,7 @@ Marcel Boldt <marcel.boldt@exasol.com>
 #include<iostream>
 
 
-
-int send_frame_test()
-{
+int send_frame_test() {
 	// Test for connection & send frame
     Websockets_connection *ws = new Websockets_connection("192.168.137.6", 7681, "MBO");
 
@@ -46,7 +44,6 @@ int send_frame_test()
     Websockets_frame *wsf = new Websockets_frame(true, false, false, false, 1, true, 30, message);
 	(*wsf).send_frame(ws);
 	return (*ws).receive_data("test.txt");
-
 }
 
 int send_data_test(const char *message, int len) {
@@ -54,6 +51,8 @@ int send_data_test(const char *message, int len) {
     Websockets_connection *ws = new Websockets_connection("192.168.137.6", 7681, "MBO");
 
     ws->send_data(message, len, 1);
+
+    //std::this_thread::sleep_for(std::chrono::milliseconds(2000));
     return (*ws).receive_data("test.txt");
 }
 
@@ -61,9 +60,9 @@ int frame_parsing_test()
 {
 	// Test for frame parsing
     unsigned char f[] = { /* Packet 317762 -  Server reply to "hello" */
-		0x81, 0x10, 0x59, 0x6f, 0x75, 0x20, 0x73, 0x65,
-		0x6e, 0x74, 0x20, 0x68, 0x65, 0x6c, 0x6c, 0x6f,
-		0x20, 0x0a };
+            0x81, 0x10, 0x59, 0x6f, 0x75, 0x20, 0x73, 0x65,
+            0x6e, 0x74, 0x20, 0x68, 0x65, 0x6c, 0x6c, 0x6f,
+            0x20, 0x0a};
 
 	Websockets_frame* wsf = new Websockets_frame((const char*)&f);
 
@@ -90,10 +89,16 @@ int main(int argc, char *argv[])
 
     //send_frame_test();
 
-    const char *message = "012345678901234567890123456789";
-    send_data_test(message, 30);
-	
-	frame_parsing_test();
+    const char *message = "AFNÖJNFÖKJNRÖKFJANFÖREANFJGHJNFÖOIFÖONÖOREAINFEARÖOIGFNREAGÖONFRJSANFÖLKREANFÖREAONAÖÖLFNFASDFASDLÖFKJAÖLDSKFJAÖLSDKFJAÖLSDKFJAÖSLDKFJÖASLDKFJÖALSDKFJAÖLSDKFJAÖSLDKJF";
+    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+    send_data_test(message, 180);
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    std::cout << "Time difference = "
+              << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() / 1000 << " ms."
+              << std::endl;
+
+
+//	frame_parsing_test();
 
 
 	return 0;

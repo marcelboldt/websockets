@@ -55,48 +55,49 @@ Marcel Boldt <marcel.boldt@exasol.com>
 
 #endif
 
-#include <thread>         // std::this_thread::sleep_for
+#include <thread>         // std::this_thread::
+#include <ctime>
 #include <chrono>         // std::chrono::seconds
-#include<string.h>
-#include<vector>
+#include <string.h>
+#include <sstream>
+#include <vector>
+#include <memory>
 
 #include "../base64/base64.h"
 
 #define MAX_FRAME_SIZE 32768 // Bit - 32768 = 4 KB
 #define BUFFER_SIZE 36864 // 4,5 KB
-
-// errors
-#define UNKNOWN_OPCODE -11
+#define RECV_DELAY 2 // ms
 
 // todo: send stream
 
 
 class Websockets_frame;
 
-class Websockets_connection { 
+class Websockets_connection {
 public:
-    Websockets_connection(const char *server, uint16_t port, const char *host);
+	Websockets_connection(const char *server, uint16_t port, const char *host);
 	~Websockets_connection();
 
-    bool connected();
+	bool connected();
 
-    int send_data(const char *data, size_t length, uint8_t oc);
+	int send_data(const char *data, size_t length, uint8_t oc);
 
-    int receive_data(const char *filename, bool append = false);
+	int receive_data(const char *filename, bool append = true);
 	int close(uint16_t closecode, Websockets_frame* recv_cf = nullptr); // TODO
 #ifdef _WIN32
 	SOCKET s;
 #else
-    int s;
+	int s;
 #endif
 
 
 private:
-    char server_reply[BUFFER_SIZE]; // this is the server part of the handshake. later parse...
-    bool CONNECTED = false;
-    unsigned char *key;
+	char server_reply[BUFFER_SIZE]; // this is the server part of the handshake. later parse...
+	bool CONNECTED = false;
+	unsigned char *key;
 	uint8_t conn_status = 0;
-	/* 
+	/*
 	 * 0 = intialised
 	 * 1 = establishing
 	 * 2 = open
@@ -112,10 +113,20 @@ private:
 
 class Websockets_frame {
 public:
-    Websockets_frame(bool FIN, bool RSV1, bool RSV2, bool RSV3, unsigned char OPCODE, bool MASK, size_t payload_length,
-                     const char *payload);
+	Websockets_frame(bool FIN, bool RSV1, bool RSV2, bool RSV3, unsigned char OPCODE, bool MASK, size_t payload_length,
+					 const char *payload);
 	Websockets_frame(const char * data);
+
+#ifdef _WIN32
+	Websockets_frame(SOCKET socket, const char * filename = nullptr);
+#else
+
+	Websockets_frame(int socket, const char *filename = nullptr);
+
+#endif
 	int send_frame(Websockets_connection * con) const;
+
+	int save_payload(const char *filename);
 
 	bool fin() const;
 	bool rsv1() const;
@@ -134,6 +145,11 @@ private:
 	unsigned char OPCODE;
 	size_t PAYLOAD_LENGTH;
 	const char * PAYLOAD;
+	bool PAYLOAD_FILE = false;
+public:
+	bool payload_file() const;
+
+	virtual ~Websockets_frame();
 
 };
 

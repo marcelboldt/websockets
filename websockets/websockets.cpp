@@ -31,6 +31,7 @@ Marcel Boldt <marcel.boldt@exasol.com>
 
 #define _CRT_SECURE_NO_WARNINGS
 
+#include <iomanip>
 #include "websockets.h"
 
 Websockets_connection::Websockets_connection(const char *ip, uint16_t port, const char *host)
@@ -42,11 +43,11 @@ Websockets_connection::Websockets_connection(const char *ip, uint16_t port, cons
 	memset(&server, 0, sizeof(server));
 	char* message = new char[2000];
 
-    key = new unsigned char[16];
-    for (int i = 0; i < 16; i++) {
-        key[i] = (unsigned char) rand() % 255;
-    }
-																			// compose message string
+	key = new unsigned char[16];
+	for (int i = 0; i < 16; i++) {
+		key[i] = (unsigned char) rand() % 255;
+	}
+	// compose message string
 
 	strcpy(message, "GET ws://");
 	strcat(message, ip);
@@ -65,7 +66,7 @@ Websockets_connection::Websockets_connection(const char *ip, uint16_t port, cons
 #endif
 
 
-																			// create socket
+	// create socket
 
 	s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (s == INVALID_SOCKET) {
@@ -73,40 +74,40 @@ Websockets_connection::Websockets_connection(const char *ip, uint16_t port, cons
         printf("Error at socket(): %ld\n", WSAGetLastError());
                 WSACleanup();
 #else
-        printf("Error at socket(): %ld\n", errno);
+		printf("Error at socket(): %ld\n", errno);
 #endif
 	}
 
 
-																			// connect to remote server
+	// connect to remote server
 
 	server.sin_addr.s_addr = inet_addr(ip);
 	server.sin_family = AF_INET;
 	server.sin_port = htons(port);
 
-    if (connect(s, (struct sockaddr *) &server, sizeof(server)) < 0)
+	if (connect(s, (struct sockaddr *) &server, sizeof(server)) < 0)
 	{
-        throw "WEBSOCKETS_CONNECTION: connect error";
+		throw "WEBSOCKETS_CONNECTION: connect error";
 	}
 
 
-																			// send data
+	// send data
 
 
 	if (send(s, message, (int)strlen(message), 0) == SOCKET_ERROR)
 	{
-        throw "Send failed";
+		throw "Send failed";
 	}
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+	std::this_thread::sleep_for(std::chrono::milliseconds(RECV_DELAY));
 
-																			// Receive a reply from the server
+	// Receive a reply from the server
 	if ((recv(s, server_reply, BUFFER_SIZE, 0)) == SOCKET_ERROR)
 	{
-        throw "recv failed";
+		throw "recv failed";
 	}
 
-    this->CONNECTED = true; // TODO: parse the server reply
+	this->CONNECTED = true; // TODO: parse the server reply
 }
 
 Websockets_connection::~Websockets_connection()
@@ -159,62 +160,21 @@ int Websockets_connection::receive_data(const char *filename, bool append)
 {/* Reads Websockets frames from the socket and writes data into a file.
 	Returns if successful the amount of bytes written; otherwise an error code as defined in websockets.h
 	*/
+	if (!append) {
+		std::remove(filename);
+	}
 
+	//Websockets_frame* f = new Websockets_frame(this->s);
 
-    //char* buf = this->server_reply; // Why must this var be global?
-    char *buf = new char[BUFFER_SIZE];
-	Websockets_frame* f;
-	std::ofstream tfile;
-	size_t len = 0;
-
-	recv(this->s, (char*)buf, BUFFER_SIZE, 0); // receive the first frame
-	f = new Websockets_frame((const char *)buf);
-
-
-	switch (f->opcode()) {
-/*	case 0:
-		for (auto i = 0; i < f->payload_length(); i++) {
-			tfile << *(f->payload() + i);
-		}
+	std::shared_ptr<Websockets_frame> f(new Websockets_frame(this->s));
+	auto len = f->payload_length();
+	while (!f->fin()) {
+		// f = new Websockets_frame(this->s, f->payload());
+		std::shared_ptr<Websockets_frame> f(new Websockets_frame(this->s, f->payload()));
 		len += f->payload_length();
-		break; */
-        case 1:
-            if (append) {
-                tfile.open(filename, std::ios::app);
-            } else {
-                tfile.open(filename, std::ios::trunc);
-            }
-		for (auto i = 0; i < f->payload_length(); i++) {
-			tfile << *(f->payload() + i);
-		}
-		len = f->payload_length();
-		break;
-	case 2:
-        if (append) {
-            tfile.open(filename, std::ios::app | std::ios::binary);
-        } else {
-            tfile.open(filename, std::ios::trunc | std::ios::binary);
-        }
-		for (auto i = 0; i < f->payload_length(); i++) {
-			tfile << *(f->payload() + i);
-		}
-		len = f->payload_length();
-		break;
-	default: return UNKNOWN_OPCODE;
 	}
+	f->save_payload(filename);
 
-	while (!f->fin())
-	{ // TODO: check connection status
-
-		if (recv(this->s, (char*)buf, BUFFER_SIZE, 0) > 0) { // receive the next frame
-			f = new Websockets_frame((const char *)buf);
-			for (auto i = 0; i < f->payload_length(); i++) {
-				tfile << *(f->payload() + i);
-			}
-			len += f->payload_length();
-		}
-	}
-		
 	return len;
 }
 
@@ -244,15 +204,16 @@ int Websockets_connection::close(uint16_t closecode, Websockets_frame* recv_cf)
 }
 
 bool Websockets_connection::connected() {
-    return this->CONNECTED;
+	return this->CONNECTED;
 }
 
 Websockets_frame::Websockets_frame(bool FIN, bool RSV1, bool RSV2, bool RSV3, unsigned char OPCODE, bool MASK,
-                                   size_t PAYLOAD_LENGTH, const char *PAYLOAD)
-{/* 
+								   size_t PAYLOAD_LENGTH, const char *PAYLOAD) {
+	/*
 Constructs a Websockets_frame object from the parameters.
 Returns: a new websockets frame object, ready to be sent.
 */
+
 	this->FIN = FIN;
 	this->RSV1 = RSV1;
 	this->RSV2 = RSV2;
@@ -266,7 +227,7 @@ Returns: a new websockets frame object, ready to be sent.
 	len = 0;
 
 	frame[0] = (FIN) ? (1 << 7) : 0;
-	
+
 	frame[0] |= (RSV1) ? (1 << 6) : 0;
 	frame[0] |= (RSV2) ? (1 << 5) : 0;
 	frame[0] |= (RSV3) ? (1 << 4) : 0;
@@ -274,13 +235,13 @@ Returns: a new websockets frame object, ready to be sent.
 
 	frame[1] = (MASK) ? (1 << 7) : 0;
 
-																			// PAYLOAD_LENGTH
+	// PAYLOAD_LENGTH
 
 	unsigned char * ptr = (unsigned char *) new size_t(htonll(PAYLOAD_LENGTH));
 	if (PAYLOAD_LENGTH > (size_t) 125) {
 		if (PAYLOAD_LENGTH > (size_t) 65535) { // > 65535 Bit (up to 2^64)
 			frame[1] |= (unsigned char) 127;
-			
+
 			for (int i = 0; i < 8; i++) {
 				frame[2 + i] = *(ptr+i); // all bytes of PAYLOAD_LENGTH
 			}
@@ -302,7 +263,7 @@ Returns: a new websockets frame object, ready to be sent.
 	delete ptr;
 	ptr = nullptr;
 
-																			// masking_key
+	// masking_key
 
 	const uint32_t* masking_key = new const uint32_t(rand() % UINT32_MAX);
 	//unsigned char masking_key[] = { 0, 0, 0, 0 }; // for debugging
@@ -313,7 +274,7 @@ Returns: a new websockets frame object, ready to be sent.
 	len += 4;
 
 
-																			// payload
+	// payload
 
 	for (int i = 0; i < PAYLOAD_LENGTH; i++) {
 		//  RFC 6455 sec. 5.3:
@@ -330,15 +291,15 @@ Websockets_frame::Websockets_frame(const char * data) {
 	/* Parses the data and returns a Websocket frame object.
 	*/
 	len = 0;
-											// 1st Byte
+	// 1st Byte
 	this->FIN = (*data & 128) > 0;
 	this->RSV1 = (*data & 64) > 0;
 	this->RSV2 = (*data & 32) > 0;
 	this->RSV3 = (*data & 16) > 0;
 	this->OPCODE = (*data & 15);
-											// 2nd Byte
+	// 2nd Byte
 	this->MASK = (*(data+1) & 128) > 0;
-	
+
 	char c = *(data + 1) & 127;
 	if (c < 126) { // this is payload_length
 		this->PAYLOAD_LENGTH = c;
@@ -355,7 +316,7 @@ Websockets_frame::Websockets_frame(const char * data) {
 		len = 10;
 	}
 
-											// Masking key & Payload
+	// Masking key & Payload
 	if (this->MASK) {
 		const char* masking_key = (data + len);
 		len += 4;
@@ -372,6 +333,120 @@ Websockets_frame::Websockets_frame(const char * data) {
 	len += this->PAYLOAD_LENGTH;
 }
 
+#ifdef _WIN32
+Websockets_frame::Websockets_frame(SOCKET socket, const char * filename) {
+#else
+
+Websockets_frame::Websockets_frame(int socket, const char *filename) {
+#endif
+	/* Reads a frame from a socket and writes the payload into a file while keeping the metadata in the object. If a filename of an existing file is given, the payload is appended.
+     * Caution: The file is removed on object destruction - so better do frame->save_payload() first!
+    */
+	srand(
+			std::chrono::duration_cast<std::chrono::milliseconds>(
+					std::chrono::system_clock::now().time_since_epoch()).count()
+	);
+
+	char *data = new char[BUFFER_SIZE];
+	char *fn = new char[128];
+	if (filename == nullptr) {
+		time_t tt = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
+		strftime(fn, 128, "WS frame %Y-%m-%d %X", std::localtime(&tt));
+		sprintf(fn, "%s %i.tmp", fn, rand() % 65536);
+	} else {
+		fn = (char *) filename;
+	}
+
+	std::ofstream tfile;
+	auto len = 0, recv_len = 0, write_len = 0;
+
+	recv_len = recv(socket, data, BUFFER_SIZE, 0); // receive the first frame
+
+	// 1st Byte
+	this->FIN = (*data & 128) > 0;
+	this->RSV1 = (*data & 64) > 0;
+	this->RSV2 = (*data & 32) > 0;
+	this->RSV3 = (*data & 16) > 0;
+	this->OPCODE = (*data & 15);
+	// 2nd Byte
+	this->MASK = (*(data + 1) & 128) > 0;
+
+	char c = *(data + 1) & 127;
+	if (c < 126) { // this is payload_length
+		this->PAYLOAD_LENGTH = c;
+		len = 2;
+	} else if (c == 126) {
+		// next two bytes are payload_length
+		this->PAYLOAD_LENGTH = ntohs(*(uint16_t *) (data + 2));
+		len = 4;
+	} else {
+		// next 8 bytes are payload length
+		this->PAYLOAD_LENGTH = ntohll(*(uint64_t *) (data + 2));
+		len = 10;
+	}
+
+	switch (this->OPCODE) {
+/*	case 0:
+		for (auto i = 0; i < f->payload_length(); i++) {
+			tfile << *(f->payload() + i);
+		}
+		len += f->payload_length();
+		break; */
+		case 1:
+			tfile.open(fn, std::ios::app);
+			break;
+		case 2:
+			tfile.open(fn, std::ios::app | std::ios::binary);
+			break;
+		default:
+			throw "UNKNOWN_OPCODE";
+	}
+
+	this->PAYLOAD = fn;
+
+	// Masking key & Payload
+	if (this->MASK) {
+		const char *masking_key = (data + len);
+		len += 4;
+
+		for (auto i = len; i < recv_len; i++) {
+			tfile << (*(data + i) ^ *(masking_key + (i % 4)));  // unmask and write to file
+		}
+		write_len = recv_len - len;
+
+		while (write_len <
+			   this->PAYLOAD_LENGTH) { // if remaining frame length < payload length, then read further from socket
+			//TODO: add a timeout
+			std::this_thread::sleep_for(std::chrono::milliseconds(RECV_DELAY));
+			recv_len = recv(socket, data, BUFFER_SIZE, 0);
+			if (recv_len == 0) throw "Socket closed while receiving websockets frame";
+			for (auto i = 0; i < recv_len; i++) {
+				tfile << (*(data + i) ^ *(masking_key + ((write_len + i) % 4)));  // unmask and write to file
+			}
+			write_len = write_len + recv_len;
+		}
+	} else { // write to file, but not unmask
+		for (auto i = len; i < recv_len; i++) {
+			tfile << *(data + i);  // write to file
+		}
+		write_len = recv_len - len;
+
+		while (write_len < this->PAYLOAD_LENGTH) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(RECV_DELAY));
+			recv_len = recv(socket, data, BUFFER_SIZE, 0);
+			if (recv_len == 0) throw "Socket closed while receiving websockets frame";
+			for (auto i = 0; i < recv_len; i++) {
+				tfile << *(data + i);  // write to file
+			}
+			write_len = write_len + recv_len;
+		}
+	}
+	tfile.close();
+	this->PAYLOAD_FILE = true;
+}
+
+
 int Websockets_frame::send_frame(Websockets_connection * con) const
 {/* Sends the frame.
 	Returns: an int indicating the frame was successfully sent (the return values of winsock / POSIX) send() */
@@ -379,10 +454,10 @@ int Websockets_frame::send_frame(Websockets_connection * con) const
 	// char test[11] = { /* Packet sending "hello", for debugging */
 	//	0x81, 0x85, 0x15, 0x98, 0x74, 0x48, 0x7d, 0xfd,
 	//	0x18, 0x24, 0x7a };
-	
+
 	// send((*con).s, (const char *) &test, 11, 0);
 
-	 return send((*con).s, (const char *)&frame, len, 0);
+	return send((*con).s, (const char *) &frame, len, 0);
 }
 
 bool Websockets_frame::fin() const
@@ -437,4 +512,32 @@ size_t Websockets_frame::payload_length() const
 const char * Websockets_frame::payload() const
 { /* returns a pointer to the payload */
 	return this->PAYLOAD;
+}
+
+bool Websockets_frame::payload_file() const {
+	return this->PAYLOAD_FILE;
+}
+
+Websockets_frame::~Websockets_frame() {
+
+	if (this->PAYLOAD_FILE) {
+		// if (remove(this->PAYLOAD) != 0) throw "tempfile couldn't be deleted";
+	}
+}
+
+int Websockets_frame::save_payload(const char *filename) {
+
+	if (this->PAYLOAD_FILE) {
+		std::ifstream src(this->PAYLOAD, std::ios::binary);
+		std::ofstream dst(filename, std::ios::binary);
+
+		dst << src.rdbuf();
+		dst.close();
+	} else {
+		std::ofstream dst(filename, std::ios::binary);
+		dst << this->PAYLOAD;
+		dst.close();
+	}
+
+	return 0;
 }
