@@ -400,6 +400,7 @@ Websockets_frame::Websockets_frame(int socket, const char *filename) {
 			tfile.open(fn, std::ios::app | std::ios::binary);
 			break;
 		default:
+            //	std::cout << "ERROR: Unknown opcode:" << this->OPCODE << std::endl;
 			throw "UNKNOWN_OPCODE";
 	}
 
