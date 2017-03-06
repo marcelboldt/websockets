@@ -38,6 +38,7 @@ Websockets_connection::Websockets_connection(const char *ip, uint16_t port, cons
 { /* Creates socket and initialises a Websocket connection to a remote server.
   Returns: A Websockets_connection object */
 
+
 	s = INVALID_SOCKET;
 	struct sockaddr_in server;
 	memset(&server, 0, sizeof(server));
@@ -58,10 +59,12 @@ Websockets_connection::Websockets_connection(const char *ip, uint16_t port, cons
 	strcat(message, key_b64.c_str());
 	strcat(message, "\r\n\r\n");
 #ifdef _WIN32
+	throw std::runtime_error("WIN32");
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
     {
         printf("Winsock startup failed. Error Code : %d\n", WSAGetLastError());
+        throw winsock_startup_error();
     }
 #endif
 
@@ -74,8 +77,9 @@ Websockets_connection::Websockets_connection(const char *ip, uint16_t port, cons
         printf("Error at socket(): %ld\n", WSAGetLastError());
                 WSACleanup();
 #else
-		printf("Error at socket(): %ld\n", errno);
+		printf("Error at socket(): %d\n", errno);
 #endif
+		throw socket_create_error();
 	}
 
 
@@ -87,16 +91,15 @@ Websockets_connection::Websockets_connection(const char *ip, uint16_t port, cons
 
 	if (connect(s, (struct sockaddr *) &server, sizeof(server)) < 0)
 	{
-		throw "WEBSOCKETS_CONNECTION: connect error";
+		throw socket_connect_error();
 	}
 
 
 	// send data
 
-
 	if (send(s, message, (int)strlen(message), 0) == SOCKET_ERROR)
 	{
-		throw "Send failed";
+		throw socket_send_error();
 	}
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(RECV_DELAY));
@@ -104,7 +107,7 @@ Websockets_connection::Websockets_connection(const char *ip, uint16_t port, cons
 	// Receive a reply from the server
 	if ((recv(s, server_reply, BUFFER_SIZE, 0)) == SOCKET_ERROR)
 	{
-		throw "recv failed";
+		throw socket_recv_error();
 	}
 
 	this->CONNECTED = true; // TODO: parse the server reply
@@ -121,8 +124,8 @@ Websockets_connection::~Websockets_connection()
 
 int Websockets_connection::send_data(const char *data, size_t length, uint8_t oc)
 {/* Sends the data given over the open Websockets connection.
-	Returns: an the number of frames sent if successful, otherwise -1. 
-	Operation codes: 
+	Returns: an the number of frames sent if successful, otherwise -1.
+	Operation codes:
 	* 0 : continuation
 	* 1 : text data
 	* 2 : binary data
@@ -400,7 +403,7 @@ Websockets_frame::Websockets_frame(int socket, const char *filename) {
 			tfile.open(fn, std::ios::app | std::ios::binary);
 			break;
 		default:
-			throw "UNKNOWN_OPCODE";
+			throw ws_unknown_opcode();
 	}
 
 	this->PAYLOAD = fn;
@@ -420,7 +423,7 @@ Websockets_frame::Websockets_frame(int socket, const char *filename) {
 			//TODO: add a timeout
 			std::this_thread::sleep_for(std::chrono::milliseconds(RECV_DELAY));
 			recv_len = recv(socket, data, BUFFER_SIZE, 0);
-			if (recv_len == 0) throw "Socket closed while receiving websockets frame";
+			if (recv_len == 0) throw socket_unexp_close();
 			for (auto i = 0; i < recv_len; i++) {
 				tfile << (*(data + i) ^ *(masking_key + ((write_len + i) % 4)));  // unmask and write to file
 			}
@@ -435,7 +438,7 @@ Websockets_frame::Websockets_frame(int socket, const char *filename) {
 		while (write_len < this->PAYLOAD_LENGTH) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(RECV_DELAY));
 			recv_len = recv(socket, data, BUFFER_SIZE, 0);
-			if (recv_len == 0) throw "Socket closed while receiving websockets frame";
+			if (recv_len == 0) throw socket_unexp_close();
 			for (auto i = 0; i < recv_len; i++) {
 				tfile << *(data + i);  // write to file
 			}
@@ -521,7 +524,7 @@ bool Websockets_frame::payload_file() const {
 Websockets_frame::~Websockets_frame() {
 
 	if (this->PAYLOAD_FILE) {
-		// if (remove(this->PAYLOAD) != 0) throw "tempfile couldn't be deleted";
+		if (remove(this->PAYLOAD) != 0) throw ws_tempfile_delete();
 	}
 }
 
