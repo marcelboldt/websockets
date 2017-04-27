@@ -68,6 +68,7 @@ Websockets_connection::Websockets_connection(const char *ip, uint16_t port, cons
     }
 #endif
 
+    delete (key);
 
 	// create socket
 
@@ -101,6 +102,8 @@ Websockets_connection::Websockets_connection(const char *ip, uint16_t port, cons
 	{
 		throw socket_send_error();
 	}
+
+    delete (message);
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(RECV_DELAY));
 
@@ -162,7 +165,7 @@ int Websockets_connection::send_data(const char *data, size_t length, uint8_t oc
 int Websockets_connection::receive_data(const char *filename, bool append)
 {/* Reads Websockets frames from the socket and writes data into a file.
 	Returns if successful the amount of bytes written; otherwise an error code as defined in websockets.h
-	*/
+*/
 	if (!append) {
 		std::remove(filename);
 	}
@@ -179,6 +182,27 @@ int Websockets_connection::receive_data(const char *filename, bool append)
 	f->save_payload(filename);
 
 	return len;
+}
+
+int Websockets_connection::receive_data(std::string *buff) {
+    /* Reads websockets frames from the socket, puts the whole data into buffer and returns the size if successful.*/
+
+    Websockets_frame *f = new Websockets_frame(this->s);
+    auto len = f->payload_length();
+
+    std::stringstream data;
+    data << f->payload();
+    while (!f->fin()) {
+
+        delete (f);
+        Websockets_frame *f = new Websockets_frame(this->s);
+        data << f->payload();
+        len += f->payload_length();
+    }
+    delete (f);
+    *buff = data.str();
+    // std::cout << *buff << std::endl;
+    return len;
 }
 
 int Websockets_connection::close(uint16_t closecode, Websockets_frame* recv_cf)
@@ -288,6 +312,7 @@ Returns: a new websockets frame object, ready to be sent.
 		frame[len] = *(PAYLOAD+i) ^ *(unsigned char*)(masking_key + (i % 4));
 		len++;
 	}
+    delete (masking_key);
 }
 
 Websockets_frame::Websockets_frame(const char * data) {
@@ -351,7 +376,7 @@ Websockets_frame::Websockets_frame(int socket, const char *filename) {
 	);
 
 	char *data = new char[BUFFER_SIZE];
-	char *fn = new char[128];
+/*	char *fn = new char[128];
 	if (filename == nullptr) {
 		time_t tt = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
@@ -359,12 +384,14 @@ Websockets_frame::Websockets_frame(int socket, const char *filename) {
 		sprintf(fn, "%s %i.tmp", fn, rand() % 65536);
 	} else {
 		fn = (char *) filename;
-	}
+	} */
 
-	std::ofstream tfile;
+    std::stringstream tfile; // ofstream
 	auto len = 0, recv_len = 0, write_len = 0;
 
+
 	recv_len = recv(socket, data, BUFFER_SIZE, 0); // receive the first frame
+
 
 	// 1st Byte
 	this->FIN = (*data & 128) > 0;
@@ -397,16 +424,16 @@ Websockets_frame::Websockets_frame(int socket, const char *filename) {
 		len += f->payload_length();
 		break; */
 		case 1:
-			tfile.open(fn, std::ios::app);
+            //	tfile.open(fn, std::ios::app);
 			break;
 		case 2:
-			tfile.open(fn, std::ios::app | std::ios::binary);
+            //	tfile.open(fn, std::ios::app | std::ios::binary);
 			break;
 		default:
 			throw ws_unknown_opcode();
 	}
 
-	this->PAYLOAD = fn;
+    //this->PAYLOAD = fn;
 
 	// Masking key & Payload
 	if (this->MASK) {
@@ -445,8 +472,10 @@ Websockets_frame::Websockets_frame(int socket, const char *filename) {
 			write_len = write_len + recv_len;
 		}
 	}
-	tfile.close();
-	this->PAYLOAD_FILE = true;
+    // tfile.close();
+
+    this->PAYLOAD = tfile.str();
+    delete (data);
 }
 
 
@@ -514,7 +543,7 @@ size_t Websockets_frame::payload_length() const
 
 const char * Websockets_frame::payload() const
 { /* returns a pointer to the payload */
-	return this->PAYLOAD;
+    return this->PAYLOAD.c_str();
 }
 
 bool Websockets_frame::payload_file() const {
@@ -524,7 +553,7 @@ bool Websockets_frame::payload_file() const {
 Websockets_frame::~Websockets_frame() {
 
 	if (this->PAYLOAD_FILE) {
-		if (remove(this->PAYLOAD) != 0) throw ws_tempfile_delete();
+        //if (remove(this->PAYLOAD) != 0) throw ws_tempfile_delete();
 	}
 }
 

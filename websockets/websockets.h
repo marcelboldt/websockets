@@ -69,7 +69,7 @@ Marcel Boldt <marcel.boldt@exasol.com>
 
 #define MAX_FRAME_SIZE 32768 // Bit - 32768 = 4 KB
 #define BUFFER_SIZE 36864 // 4,5 KB
-#define RECV_DELAY 2 // ms
+#define RECV_DELAY 1 // ms
 
 // todo: send stream
 
@@ -140,6 +140,8 @@ public:
 	int send_data(const char *data, size_t length, uint8_t oc);
 
 	int receive_data(const char *filename, bool append = true);
+
+    int receive_data(std::string *data);
 	int close(uint16_t closecode, Websockets_frame* recv_cf = nullptr); // TODO
 #ifdef _WIN32
 	SOCKET s;
@@ -200,7 +202,7 @@ private:
 	bool sent = false, FIN, RSV1, RSV2, RSV3, MASK;
 	unsigned char OPCODE;
 	size_t PAYLOAD_LENGTH;
-	const char * PAYLOAD;
+    std::string PAYLOAD;
 	bool PAYLOAD_FILE = false;
 public:
 	bool payload_file() const;

@@ -43,7 +43,10 @@ int send_frame_test() {
 
     Websockets_frame *wsf = new Websockets_frame(true, false, false, false, 1, true, 30, message);
 	(*wsf).send_frame(ws);
-	return (*ws).receive_data("test.txt");
+    std::string data;
+    int len = ws->receive_data(&data);
+    std::cout << data << std::endl;
+    return len;
 }
 
 int send_data_test(const char *message, int len) {
@@ -52,8 +55,10 @@ int send_data_test(const char *message, int len) {
 
     ws->send_data(message, len, 1);
 
-    //std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-    return (*ws).receive_data("test.txt");
+    std::string data;
+    len = ws->receive_data(&data);
+    std::cout << "RECV: " << data << std::endl;
+    return len;
 }
 
 int frame_parsing_test()
