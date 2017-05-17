@@ -67,9 +67,11 @@ Marcel Boldt <marcel.boldt@exasol.com>
 
 #include "../base64/base64.h"
 
-#define MAX_FRAME_SIZE 32768 // Bit - 32768 = 4 KB
-#define BUFFER_SIZE 36864 // 4,5 KB
-#define RECV_DELAY 1 // ms
+// this is the max. size of the frames' payload! There is additional overhead...
+#define MAX_FRAME_PAYLOAD_SIZE 32768//1 * 1048576//2097152//10485760//32768 // Byte - 32768 = 32 KB
+#define MAX_WS_FRAME_SIZE MAX_FRAME_PAYLOAD_SIZE + 16 // max. 14 Bit needed for ws frame overhead
+#define BUFFER_SIZE 36864 // This is the size of the socket recv buffer, and also the max. gross frame length (size of the char buffer used for ws_frame serialisation)
+#define RECV_DELAY 1 // msf
 
 // todo: send stream
 
@@ -197,7 +199,7 @@ public:
 	const char* payload() const;
 
 private:
-	unsigned char frame[MAX_FRAME_SIZE];
+	unsigned char frame[MAX_WS_FRAME_SIZE];
 	size_t len;
 	bool sent = false, FIN, RSV1, RSV2, RSV3, MASK;
 	unsigned char OPCODE;
@@ -207,7 +209,7 @@ private:
 public:
 	bool payload_file() const;
 
-	virtual ~Websockets_frame();
+//	virtual ~Websockets_frame();
 
 };
 

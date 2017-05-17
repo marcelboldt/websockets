@@ -141,16 +141,19 @@ int Websockets_connection::send_data(const char *data, size_t length, uint8_t oc
 
 	auto i = 0;
 	std::vector<bool> succ;
-	Websockets_frame* f;
+    //Websockets_frame* f;
 
-	while(i + MAX_FRAME_SIZE < length)
+    while (i + MAX_FRAME_PAYLOAD_SIZE < length)
 	{
-		f = new Websockets_frame(false, false, false, false, (i == 0 ? oc : 0), (this->client ? 1 : 0), MAX_FRAME_SIZE, (data + i));
+        Websockets_frame *f = new Websockets_frame(false, false, false, false, (i == 0 ? oc : 0),
+                                                   (this->client ? 1 : 0), MAX_FRAME_PAYLOAD_SIZE, (data + i));
 		succ.push_back(f->send_frame(this));
-		i += MAX_FRAME_SIZE;
+        i += MAX_FRAME_PAYLOAD_SIZE;
 		delete(f);
+        //  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
-	f = new Websockets_frame(true, false, false, false, (i == 0 ? oc : 0), (this->client ? 1 : 0), length, (data + i));
+    Websockets_frame *f = new Websockets_frame(true, false, false, false, (i == 0 ? oc : 0), (this->client ? 1 : 0),
+                                               length - i, (data + i));
 	succ.push_back(f->send_frame(this));
 	delete(f);
 
@@ -550,26 +553,28 @@ bool Websockets_frame::payload_file() const {
 	return this->PAYLOAD_FILE;
 }
 
+/*
 Websockets_frame::~Websockets_frame() {
 
-	if (this->PAYLOAD_FILE) {
+	//if (this->PAYLOAD_FILE) {
         //if (remove(this->PAYLOAD) != 0) throw ws_tempfile_delete();
-	}
-}
+	//}
+}*/
+
 
 int Websockets_frame::save_payload(const char *filename) {
 
-	if (this->PAYLOAD_FILE) {
-		std::ifstream src(this->PAYLOAD, std::ios::binary);
-		std::ofstream dst(filename, std::ios::binary);
+    if (this->PAYLOAD_FILE) {
+        std::ifstream src(this->PAYLOAD, std::ios::binary);
+        std::ofstream dst(filename, std::ios::binary);
 
-		dst << src.rdbuf();
-		dst.close();
-	} else {
-		std::ofstream dst(filename, std::ios::binary);
-		dst << this->PAYLOAD;
-		dst.close();
-	}
+        dst << src.rdbuf();
+        dst.close();
+    } else {
+        std::ofstream dst(filename, std::ios::binary);
+        dst << this->PAYLOAD;
+        dst.close();
+    }
 
-	return 0;
+    return 0;
 }
