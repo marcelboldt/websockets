@@ -4,8 +4,8 @@ project(websockets)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
 set(SOURCE_FILES
-        ./base64/base64.cpp
-        ./base64/base64.h
+        ./websockets/base64.cpp
+        ./websockets/base64.h
         ./sockets.cpp
         ./websockets/websockets.cpp
         ./websockets/websockets.h)

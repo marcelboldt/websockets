@@ -65,7 +65,7 @@ Marcel Boldt <marcel.boldt@exasol.com>
 #include <vector>
 #include <memory>
 
-#include "../base64/base64.h"
+#include "base64.h"
 
 // this is the max. size of the frames' payload! There is additional overhead...
 #define MAX_FRAME_PAYLOAD_SIZE 32768//1 * 1048576//2097152//10485760//32768 // Byte - 32768 = 32 KB
